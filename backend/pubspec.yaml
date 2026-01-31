@@ -5,4 +5,4 @@ environment:
 
 dependencies:
   alfred: ^1.1.3
-  sqlite3: ^2.2.0
+  sqlite3: ^2.2.0  # ВАЖНО: sqlite3 вместо postgres

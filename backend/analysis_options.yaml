@@ -1,0 +1,11 @@
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+
+linter:
+  rules:
+    - always_declare_return_types
+    - camel_case_types
+    - empty_catches
+    - prefer_is_empty

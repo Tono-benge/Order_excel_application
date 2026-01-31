@@ -4,5 +4,5 @@ environment:
   sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
-  alfred: ^0.1.11
-  postgres: ^2.5.4  # ЗАМЕНИЛИ sqlite3 на postgres
+  alfred: ^1.1.3
+  sqlite3: ^2.2.0

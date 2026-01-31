@@ -1,0 +1,15 @@
+name: dart_server_application
+description: A simple HTTP server with Alfred
+version: 1.0.0
+publish_to: 'none' # Предотвращает случайную публикацию
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  alfred: ^1.0.0  # Библтотека Http сервера
+  sqlite3: ^2.1.0  # Добавлен sqlite3
+  path: ^1.9.0     # Добавлен path для работы с путями файлов
+
+dev_dependencies:
+  test: ^1.24.0

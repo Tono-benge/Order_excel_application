@@ -1,6 +1,6 @@
 import 'dart:convert'; // Для jsonDecode
 import 'package:alfred/alfred.dart'; // импорт либы сервера
-import 'package:postgres/postgres.dart'; // ДЛЯ РАБОТЫ С PostgreSQL
+import 'package:sqlite3/sqlite3.dart'; // ДЛЯ РАБОТЫ С SQLite
 import 'dart:io';
 
 void main() async {
@@ -20,22 +20,21 @@ void main() async {
     return null;
   });
 
-  // ПОДКЛЮЧЕНИЕ К PostgreSQL (ИСПРАВЛЕНО ДЛЯ СЕРВЕРА)
-  final connection = PostgreSQLConnection(
-    'localhost',        // хост
-    5432,              // порт PostgreSQL
-    'andrey_payments', // имя базы данных
-    username: 'andrey_user',
-    password: 'andrey123',
-  );
+  // ПОДКЛЮЧЕНИЕ К SQLite (ИСПРАВЛЕНО ДЛЯ СЕРВЕРА)
+  final dbPath = '/var/www/myapp/database/andrey_payments.db';
+  final db = sqlite3.open(dbPath);
 
+  print('✅ Подключено к SQLite БД: $dbPath');
+  
+  // Проверяем таблицы
   try {
-    await connection.open();
-    print('✅ Подключено к PostgreSQL: andrey_payments');
+    final usersCount = db.select('SELECT COUNT(*) FROM Table1').first.values.first;
+    final ordersCount = db.select('SELECT COUNT(*) FROM Table2').first.values.first;
+    print('📊 Пользователей в Table1: $usersCount');
+    print('📊 Заказов в Table2: $ordersCount');
   } catch (e) {
-    print('❌ Ошибка подключения к PostgreSQL: $e');
-    // В режиме разработки можем работать без БД
-    print('⚠️  Работаем в режиме без базы данных');
+    print('⚠️  Ошибка при проверке таблиц: $e');
+    print('⚠️  Проверьте структуру БД');
   }
 
   // 🔧 Отладочный эндпоинт (ИСПРАВЛЕННЫЙ)
@@ -67,31 +66,27 @@ void main() async {
   // 🎯 API ДЛЯ ПОЛЬЗОВАТЕЛЕЙ (Table1)
 
   // 2. Получить всех пользователей
-  app.get('/api/users', (req, res) async {
+  app.get('/api/users', (req, res) {
     print('✅ GET /api/users');
     try {
-      final results = await connection.query('SELECT * FROM Table1 ORDER BY ID');
-      final users = results.map((row) => row.toColumnMap()).toList();
-      return {'status': 'success', 'count': users.length, 'users': users};
+      final results = db.select('SELECT * FROM Table1 ORDER BY ID');
+      return {'status': 'success', 'count': results.length, 'users': results};
     } catch (e) {
       return {'status': 'error', 'message': 'Ошибка БД: $e', 'users': []};
     }
   });
 
   // 3. Получить пользователя по ID
-  app.get('/api/users/:id', (req, res) async {
+  app.get('/api/users/:id', (req, res) {
     final userId = int.tryParse(req.params['id'] ?? '');
     if (userId == null) return {'error': 'Неверный ID пользователя'};
 
     print('✅ GET /api/users/$userId');
     try {
-      final results = await connection.query(
-        'SELECT * FROM Table1 WHERE ID = @id',
-        substitutionValues: {'id': userId},
-      );
+      final results = db.select('SELECT * FROM Table1 WHERE ID = ?', [userId]);
 
       if (results.isEmpty) return {'error': 'Пользователь не найден'};
-      return {'status': 'success', 'user': results.first.toColumnMap()};
+      return {'status': 'success', 'user': results.first};
     } catch (e) {
       return {'error': 'Ошибка БД: $e'};
     }
@@ -138,14 +133,10 @@ void main() async {
         return {'error': 'Имя не может быть пустым'};
       }
 
-      // Сохраняем в БД (PostgreSQL)
+      // Сохраняем в БД (SQLite)
       print('✅ Создаём пользователя: "$fullName" (метод: $methodUsed)');
-      final result = await connection.query(
-        'INSERT INTO Table1 (full_name) VALUES (@name) RETURNING ID',
-        substitutionValues: {'name': fullName},
-      );
-
-      final newId = result.first[0];
+      db.execute('INSERT INTO Table1 (full_name) VALUES (?)', [fullName]);
+      final newId = db.lastInsertRowId;
 
       return {
         'status': 'success',
@@ -195,9 +186,9 @@ void main() async {
       print('📝 Новое имя: $fullName');
       
       // Проверяем существование пользователя
-      final existingUser = await connection.query(
-        'SELECT ID FROM Table1 WHERE ID = @id',
-        substitutionValues: {'id': userId},
+      final existingUser = db.select(
+        'SELECT ID FROM Table1 WHERE ID = ?',
+        [userId],
       );
       
       if (existingUser.isEmpty) {
@@ -205,23 +196,23 @@ void main() async {
       }
       
       // Обновляем пользователя в БД
-      await connection.query(
-        'UPDATE Table1 SET full_name = @name WHERE ID = @id',
-        substitutionValues: {'name': fullName, 'id': userId},
+      db.execute(
+        'UPDATE Table1 SET full_name = ? WHERE ID = ?',
+        [fullName, userId],
       );
       
       print('✅ Пользователь обновлён: $fullName');
       
       // Возвращаем обновлённого пользователя
-      final updatedUser = await connection.query(
-        'SELECT * FROM Table1 WHERE ID = @id',
-        substitutionValues: {'id': userId},
+      final updatedUser = db.select(
+        'SELECT * FROM Table1 WHERE ID = ?',
+        [userId],
       );
       
       return {
         'status': 'success',
         'message': 'Пользователь обновлён',
-        'user': updatedUser.first.toColumnMap(),
+        'user': updatedUser.first,
       };
       
     } catch (e, stackTrace) {
@@ -245,9 +236,9 @@ void main() async {
       print('🗑️ ID пользователя для удаления: $userId');
       
       // Проверяем существование пользователя
-      final existingUser = await connection.query(
-        'SELECT ID FROM Table1 WHERE ID = @id',
-        substitutionValues: {'id': userId},
+      final existingUser = db.select(
+        'SELECT ID FROM Table1 WHERE ID = ?',
+        [userId],
       );
       
       if (existingUser.isEmpty) {
@@ -255,18 +246,15 @@ void main() async {
       }
       
       // Устанавливаем NULL в заказах этого пользователя
-      await connection.query(
-        'UPDATE Table2 SET UserID_Foreign_Key = NULL WHERE UserID_Foreign_Key = @id',
-        substitutionValues: {'id': userId},
+      db.execute(
+        'UPDATE Table2 SET UserID_Foreign_Key = NULL WHERE UserID_Foreign_Key = ?',
+        [userId],
       );
       
       print('✅ Заказы пользователя отвязаны (UserID_Foreign_Key = NULL)');
       
       // Удаляем пользователя из базы данных
-      await connection.query(
-        'DELETE FROM Table1 WHERE ID = @id',
-        substitutionValues: {'id': userId},
-      );
+      db.execute('DELETE FROM Table1 WHERE ID = ?', [userId]);
       
       print('✅ Пользователь удалён: ID $userId');
       
@@ -285,20 +273,19 @@ void main() async {
   // 🎯 API ДЛЯ ЗАКАЗОВ (Table2)
 
   // 5. Получить все заказы
-  app.get('/api/orders', (req, res) async {
+  app.get('/api/orders', (req, res) {
     print('✅ GET /api/orders');
 
     try {
-      final results = await connection.query('''
+      final results = db.select('''
         SELECT o.*, u.full_name 
         FROM Table2 o 
         LEFT JOIN Table1 u ON o.UserID_Foreign_Key = u.ID 
         ORDER BY o.order_ID
       ''');
 
-      final orders = results.map((row) => row.toColumnMap()).toList();
-      print('📊 Найдено заказов: ${orders.length}');
-      return {'status': 'success', 'count': orders.length, 'orders': orders};
+      print('📊 Найдено заказов: ${results.length}');
+      return {'status': 'success', 'count': results.length, 'orders': results};
     } catch (e) {
       print('❌ Ошибка при запросе заказов: $e');
       return {'error': 'Ошибка БД: $e'};
@@ -306,29 +293,24 @@ void main() async {
   });
 
   // 6. Получить заказы конкретного пользователя
-  app.get('/api/users/:id/orders', (req, res) async {
+  app.get('/api/users/:id/orders', (req, res) {
     final userId = int.tryParse(req.params['id'] ?? '');
     if (userId == null) return {'error': 'Неверный ID пользователя'};
 
     print('✅ GET /api/users/$userId/orders');
 
-    try {
-      final results = await connection.query('''
-        SELECT * FROM Table2 
-        WHERE UserID_Foreign_Key = @userId 
-        ORDER BY order_ID
-      ''', substitutionValues: {'userId': userId});
+    final results = db.select('''
+      SELECT * FROM Table2 
+      WHERE UserID_Foreign_Key = ? 
+      ORDER BY order_ID
+    ''', [userId]);
 
-      final orders = results.map((row) => row.toColumnMap()).toList();
-      return {
-        'status': 'success',
-        'user_id': userId,
-        'count': orders.length,
-        'orders': orders
-      };
-    } catch (e) {
-      return {'error': 'Ошибка БД: $e'};
-    }
+    return {
+      'status': 'success',
+      'user_id': userId,
+      'count': results.length,
+      'orders': results
+    };
   });
 
   // 7. Создать новый заказ
@@ -360,20 +342,16 @@ void main() async {
       print('💾 Вставка в БД: amount=$orderAmount, userId=$userForeignKey');
       
       // Вставляем заказ
-      final result = await connection.query('''
-        INSERT INTO Table2 (order_amount, UserID_Foreign_Key) 
-        VALUES (@amount, @userId) 
-        RETURNING order_ID
-      ''', substitutionValues: {
-        'amount': orderAmount,
-        'userId': userForeignKey,
-      });
+      db.execute(
+        'INSERT INTO Table2 (order_amount, UserID_Foreign_Key) VALUES (?, ?)',
+        [orderAmount, userForeignKey],
+      );
       
-      final newOrderId = result.first[0];
+      final newOrderId = db.lastInsertRowId;
       print('✅ Заказ создан с ID: $newOrderId');
       
       // Получаем полные данные заказа
-      final newOrderResult = await connection.query('''
+      final newOrderResult = db.select('''
         SELECT 
           o.order_ID as orderID,
           o.order_amount as orderamount,
@@ -381,8 +359,8 @@ void main() async {
           u.full_name as fullname
         FROM Table2 o
         LEFT JOIN Table1 u ON o.UserID_Foreign_Key = u.ID
-        WHERE o.order_ID = @id
-      ''', substitutionValues: {'id': newOrderId});
+        WHERE o.order_ID = ?
+      ''', [newOrderId]);
       
       if (newOrderResult.isEmpty) {
         return {
@@ -390,7 +368,7 @@ void main() async {
         };
       }
       
-      final orderData = newOrderResult.first.toColumnMap();
+      final orderData = newOrderResult.first;
       print('📤 Возвращаем заказ: $orderData');
       
       return {
@@ -445,8 +423,8 @@ void main() async {
       int usersCreatedCount = 0;
       final List<Map<String, dynamic>> errors = [];
 
-      // Начинаем транзакцию
-      await connection.query('BEGIN');
+      // Начинаем транзакцию SQLite
+      db.execute('BEGIN TRANSACTION');
       
       try {
         for (final rawOrder in orders) {
@@ -502,43 +480,40 @@ void main() async {
           // Найти или создать пользователя
           int userId;
 
-          final existingUsers = await connection.query(
-            'SELECT ID FROM Table1 WHERE LOWER(full_name) = LOWER(@name)',
-            substitutionValues: {'name': fullName},
+          final existingUsers = db.select(
+            'SELECT ID FROM Table1 WHERE LOWER(full_name) = LOWER(?)',
+            [fullName],
           );
 
           if (existingUsers.isEmpty) {
-            // Создаём нового пользователя
-            final result = await connection.query(
-              'INSERT INTO Table1 (full_name) VALUES (@name) RETURNING ID',
-              substitutionValues: {'name': fullName},
+            db.execute(
+              'INSERT INTO Table1 (full_name) VALUES (?)',
+              [fullName],
             );
-            userId = result.first[0] as int;
+            userId = db.lastInsertRowId;
             usersCreatedCount++;
             print('✅ Создан пользователь: "$fullName" (ID: $userId)');
           } else {
-            // Пользователь уже существует
-            userId = existingUsers.first[0] as int;
+            userId = existingUsers.first['ID'] as int;
             print('📌 Найден существующий пользователь: "$fullName" (ID: $userId)');
           }
 
           // Вставляем заказ
-          await connection.query(
-            'INSERT INTO Table2 (order_amount, UserID_Foreign_Key) VALUES (@amount, @userId)',
-            substitutionValues: {'amount': amount, 'userId': userId},
+          db.execute(
+            'INSERT INTO Table2 (order_amount, UserID_Foreign_Key) VALUES (?, ?)',
+            [amount, userId],
           );
           insertedCount++;
           print('✅ Заказ добавлен: amount=$amount, userId=$userId');
         }
 
         // Фиксируем транзакцию
-        await connection.query('COMMIT');
+        db.execute('COMMIT');
         
       } catch (e, stackTrace) {
-        // Откатываем транзакцию
         print('❌ Ошибка в транзакции импорта: $e');
         print('❌ StackTrace: $stackTrace');
-        await connection.query('ROLLBACK');
+        db.execute('ROLLBACK');
         
         return {
           'error': 'Ошибка при массовом импорте: $e',
@@ -570,17 +545,14 @@ void main() async {
   });
 
   // 8. Удалить заказ
-  app.delete('/api/orders/:id', (req, res) async {
+  app.delete('/api/orders/:id', (req, res) {
     final orderId = int.tryParse(req.params['id'] ?? '');
     if (orderId == null) return {'error': 'Неверный ID заказа'};
 
     print('✅ DELETE /api/orders/$orderId');
 
     try {
-      await connection.query(
-        'DELETE FROM Table2 WHERE order_ID = @id',
-        substitutionValues: {'id': orderId},
-      );
+      db.execute('DELETE FROM Table2 WHERE order_ID = ?', [orderId]);
       return {'status': 'success', 'message': 'Заказ удалён'};
     } catch (e) {
       return {'error': 'Ошибка удаления: $e'};
@@ -619,9 +591,9 @@ void main() async {
       print('💾 Новые данные: amount=$orderAmount, userId=$userForeignKey');
       
       // Проверяем что заказ существует
-      final existingOrder = await connection.query(
-        'SELECT order_ID FROM Table2 WHERE order_ID = @id',
-        substitutionValues: {'id': orderId},
+      final existingOrder = db.select(
+        'SELECT order_ID FROM Table2 WHERE order_ID = ?',
+        [orderId],
       );
       
       if (existingOrder.isEmpty) {
@@ -629,19 +601,15 @@ void main() async {
       }
       
       // Обновляем заказ в БД
-      await connection.query(
-        'UPDATE Table2 SET order_amount = @amount, UserID_Foreign_Key = @userId WHERE order_ID = @id',
-        substitutionValues: {
-          'amount': orderAmount,
-          'userId': userForeignKey,
-          'id': orderId,
-        },
+      db.execute(
+        'UPDATE Table2 SET order_amount = ?, UserID_Foreign_Key = ? WHERE order_ID = ?',
+        [orderAmount, userForeignKey, orderId],
       );
       
       print('✅ Заказ обновлён');
       
       // Возвращаем обновлённый заказ
-      final updatedOrderResult = await connection.query('''
+      final updatedOrderResult = db.select('''
         SELECT 
           o.order_ID as orderID,
           o.order_amount as orderamount,
@@ -649,14 +617,14 @@ void main() async {
           u.full_name as fullname
         FROM Table2 o
         LEFT JOIN Table1 u ON o.UserID_Foreign_Key = u.ID
-        WHERE o.order_ID = @id
-      ''', substitutionValues: {'id': orderId});
+        WHERE o.order_ID = ?
+      ''', [orderId]);
       
       if (updatedOrderResult.isEmpty) {
         return {'error': 'Заказ обновлён, но не найден'};
       }
       
-      final orderData = updatedOrderResult.first.toColumnMap();
+      final orderData = updatedOrderResult.first;
       print('📤 Возвращаем обновлённый заказ: $orderData');
       
       return {
@@ -669,7 +637,9 @@ void main() async {
       print('❌ ОШИБКА обновления заказа: $e');
       print('❌ StackTrace: $stackTrace');
       
-      return {'error': 'Ошибка обновления заказа: $e'};
+      return {
+        'error': 'Ошибка обновления заказа: $e'
+      };
     }
   });
 
@@ -720,7 +690,7 @@ void main() async {
       final List<Map<String, dynamic>> errors = [];
 
       // Начинаем транзакцию
-      await connection.query('BEGIN');
+      db.execute('BEGIN TRANSACTION');
 
       try {
         for (final rawInstaller in installers) {
@@ -776,40 +746,40 @@ void main() async {
           // Поиск или создание пользователя
           int userId;
           
-          final existingUsers = await connection.query(
-            'SELECT ID FROM Table1 WHERE LOWER(full_name) = LOWER(@name)',
-            substitutionValues: {'name': fullName},
+          final existingUsers = db.select(
+            'SELECT ID FROM Table1 WHERE LOWER(full_name) = LOWER(?)',
+            [fullName],
           );
 
           if (existingUsers.isEmpty) {
-            final result = await connection.query(
-              'INSERT INTO Table1 (full_name) VALUES (@name) RETURNING ID',
-              substitutionValues: {'name': fullName},
+            db.execute(
+              'INSERT INTO Table1 (full_name) VALUES (?)',
+              [fullName],
             );
-            userId = result.first[0] as int;
+            userId = db.lastInsertRowId;
             usersCreatedCount++;
             print('  ✓ Создан новый пользователь ID: $userId');
           } else {
-            userId = existingUsers.first[0] as int;
+            userId = existingUsers.first['ID'] as int;
             print('  ✓ Найден существующий пользователь ID: $userId');
           }
 
           // Создаём заказ
-          await connection.query(
-            'INSERT INTO Table2 (order_amount, UserID_Foreign_Key) VALUES (@amount, @userId)',
-            substitutionValues: {'amount': amount, 'userId': userId},
+          db.execute(
+            'INSERT INTO Table2 (order_amount, UserID_Foreign_Key) VALUES (?, ?)',
+            [amount, userId],
           );
           ordersCreatedCount++;
           print('  ✓ Создан заказ на сумму: $amount ₽');
         }
 
-        await connection.query('COMMIT');
+        db.execute('COMMIT');
         print('✓ Транзакция завершена успешно');
 
       } catch (e, stackTrace) {
         print('✗ Ошибка в транзакции: $e');
         print('StackTrace: $stackTrace');
-        await connection.query('ROLLBACK');
+        db.execute('ROLLBACK');
         
         return {
           'status': 'error',
@@ -852,22 +822,22 @@ void main() async {
 
   print('\n🎉 Сервер запущен!');
   print('📍 Адрес: http://localhost:$port');
+  print('📍 Внешний адрес: http://212.193.63.116:$port');
   print('📡 API endpoints:');
-  print('   - POST /api/debug                      - отладка');
-  print('   - GET  /appleserver                    - тест сервера');
-  print('   - GET  /api/users                      - все пользователи');
-  print('   - GET  /api/users/:id                  - пользователь по ID');
-  print('   - POST /api/users                      - создать пользователя');
-  print('   - PUT  /api/users/:id                  - обновить пользователя');
-  print('   - DELETE /api/users/:id                - удалить пользователя');  
-  print('   - GET  /api/orders                     - все заказы');
-  print('   - GET  /api/users/:id/orders           - заказы пользователя');
-  print('   - POST /api/orders                     - создать заказ');
-  print('   - PUT  /api/orders/:id                 - обновить заказ');
-  print('   - DELETE /api/orders/:id               - удалить заказ');
-  print('   - POST /api/orders/import              - массовый импорт заказов');
-  print('   - POST /api/orders/import-aggregated   - импорт агрегированных данных');
-  print('   - GET  /appleserver/json               - тестовый JSON');
+  print('   - GET  /                          - информация о сервере');
+  print('   - GET  /appleserver               - тест сервера');
+  print('   - GET  /api/users                 - все пользователи');
+  print('   - GET  /api/users/:id             - пользователь по ID');
+  print('   - POST /api/users                 - создать пользователя');
+  print('   - PUT  /api/users/:id             - обновить пользователя');
+  print('   - DELETE /api/users/:id           - удалить пользователя');  
+  print('   - GET  /api/orders                - все заказы');
+  print('   - GET  /api/users/:id/orders      - заказы пользователя');
+  print('   - POST /api/orders                - создать заказ');
+  print('   - PUT  /api/orders/:id            - обновить заказ');
+  print('   - DELETE /api/orders/:id          - удалить заказ');
+  print('   - POST /api/orders/import         - массовый импорт заказов');
+  print('   - POST /api/orders/import-aggregated - импорт агрегированных данных');
   print('');
   print('⏹️  Для остановки: Ctrl+C');
 

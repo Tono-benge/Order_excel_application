@@ -1,0 +1,41 @@
+name: flutter_payment_app
+description: Приложение для управления заказами монтажников
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+ 
+  file_picker: ^8.0.0          # Выбор файла с устройства
+ 
+   
+   # excel: ^4.0.6 Удалили этот  пакет excel для парсинга .xlsx файлов так как юзаем spreadsheet_decoder
+  
+   
+  spreadsheet_decoder: ^2.3.0 # ✅ НОВОЕ: Пакет для парсинга Excel с поддержкой кэшированных формул
+
+
+  # State Management - простой и эффективный Provider
+  provider: ^6.1.2
+  
+  # HTTP клиент для API запросов
+  http: ^1.2.0
+  
+  # UI компоненты
+  cupertino_icons: ^1.0.6
+  
+  # Для красивых уведомлений об ошибках
+  fluttertoast: ^8.2.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
